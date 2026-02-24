@@ -3,7 +3,7 @@ import numpy as np
 import datetime as dt
 
 # Function for calculating concentration above largest bin
-def concentration_above_bins(scan_start_time, data_df, lowest_bin_limit):
+def concentration_above_bins(scan_start_time, data_df, lowest_bin_limit, dilution_factor):
 
     # store columns named 'concentration', 'satflow', 't' from data_df to data_df_copy
     data_df_copy = data_df.filter(items=['concentration', 'satflow', 't'], axis=1)
@@ -30,8 +30,10 @@ def concentration_above_bins(scan_start_time, data_df, lowest_bin_limit):
             # store nan in concentration_values
             concentration_values = np.append(concentration_values, np.nan)
         else:
-            # calculate average of concentration values in scan and round to 2 decimals
-            average_concentration = round(np.average(scan.iloc[:, 0]), 2)
+            # calculate average of concentration values in scan
+            average_concentration = np.average(scan.iloc[:, 0])
+            # apply dilution factor and round to 2 decimals
+            average_concentration = round(average_concentration * dilution_factor, 2)
             # store average_concentration in concentration_values
             concentration_values = np.append(concentration_values, average_concentration)
 
@@ -146,23 +148,43 @@ def expand_psm_data(df):
 def expand_cpc_data(df):
     df['YYYY.MM.DD hh:mm:ss'] = pd.to_datetime(df.iloc[:, 0], format='%Y.%m.%d %H:%M:%S')
     print(df)
-    expanded_rows = []
-    # go through each row and create 10 rows with 100ms intervals
-    for row_index, row in df.iterrows():
-        base_time = row.iloc[0] # get row base time
-        concentrations = row.iloc[1:] # get row concentrations
-        # if first row, set only the last value to base time
-        if row_index == 0:
-            expanded_rows.append([base_time, pd.to_numeric(concentrations.iloc[9], errors='coerce')])
-            continue
-        # set each concentration to corresponding 10Hz timestamp (backwards offset)
-        for i in range(10):
-            offset_index = i - 9 # get index for time offset (i 0 = -900ms, i 9 = 0ms)
-            new_time = base_time + dt.timedelta(milliseconds=100 * offset_index)
-            conc_value = pd.to_numeric(concentrations.iloc[i], errors='coerce')  # <- This ensures NaT/invalids become NaN
-            expanded_rows.append([new_time, conc_value])
-            
-    df_exp = pd.DataFrame(expanded_rows, columns=['t', 'CPC_concentration'])
+
+    # get base times and concentration columns
+    base_times = df['YYYY.MM.DD hh:mm:ss'].values
+    conc_cols = df.iloc[:, 1:11].values  # assuming 10 concentration columns
+
+    # handle first row (only last concentration value)
+    first_row_time = base_times[0]
+    first_row_conc = pd.to_numeric(conc_cols[0, 9], errors='coerce')
+
+    # process remaining rows
+    if len(base_times) > 1:
+
+        # expand base_times (skip first row)
+        n_rows = len(base_times) - 1  # exclude first row
+        expanded_times = np.repeat(base_times[1:], 10).reshape(n_rows, 10)
+        # create time offsets: [-900ms, -800ms, ..., 0ms] for each row
+        offsets_ms = np.arange(-900, 100, 100)  # -900 to 0 in 100ms steps
+        # add offsets to create timestamps
+        expanded_times = expanded_times + offsets_ms.astype('timedelta64[ms]')
+        # flatten times
+        expanded_times_flat = expanded_times.flatten()
+
+        # flatten concentrations (skip first row)
+        expanded_concs = conc_cols[1:].flatten()
+        # convert to numeric
+        expanded_concs = pd.to_numeric(expanded_concs, errors='coerce')
+
+        # combine first row with expanded data
+        all_times = np.concatenate([[first_row_time], expanded_times_flat])
+        all_concs = np.concatenate([[first_row_conc], expanded_concs])
+    else:
+        # only first row exists
+        all_times = np.array([first_row_time])
+        all_concs = np.array([first_row_conc])
+
+    # create DataFrame
+    df_exp = pd.DataFrame({'t': all_times, 'CPC_concentration': all_concs})
 
     return df_exp
 

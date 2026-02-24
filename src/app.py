@@ -872,8 +872,8 @@ class MainWindow(QMainWindow):
         else:
             options = QFileDialog.Option.ReadOnly
             file_names, _ = QFileDialog.getOpenFileNames(self, "Load data files", "", "PSM data files (*PSM*.dat);;All data files (*.dat);;All files (*)", options=options)
+            file_names.sort() # sort file names alphabetically
         if file_names:
-            # TODO if many files, ask user for confirmation before loading
             # set cursor to loading
             self.application.setOverrideCursor(Qt.WaitCursor)
             try:
@@ -1036,6 +1036,7 @@ class MainWindow(QMainWindow):
         folder_path = os.path.dirname(self.current_filenames[0])
         folder_path = folder_path.replace('\\', '/') + '/'
         print("folder path:", folder_path)
+        folder_path = glob.escape(folder_path) # escape special characters ('[') for glob search below
         for cpc_idn in cpc_idn_options:
             print("using CPC IDN:", cpc_idn)
             cpc_files = [] # list to store found cpc files
@@ -2036,7 +2037,8 @@ class MainWindow(QMainWindow):
                 save_data.insert(0, 'Scan start time', self.scan_start_time)
             
             # calculate concentration values above largest bin
-            larger_concentration = concentration_above_bins(self.scan_start_time, self.data_df, self.lowest_bin_limit)
+            dilution_factor = float(self.ext_dilution_fac_input.text())
+            larger_concentration = concentration_above_bins(self.scan_start_time, self.data_df, self.lowest_bin_limit, dilution_factor)
             # add result as column to save_data dataframe
             highest_dp = str(round(self.Ninv['UpperDp'].iloc[0], 2))
             save_data[('Dp >' + highest_dp + ' nm total number concentration')] = larger_concentration

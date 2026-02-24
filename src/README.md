@@ -1,5 +1,13 @@
 # PSM Inversion Tool - Software change log
 
+### 0.10.2 - 2026.01.20
+- 10 Hz files: handle special characters in file path
+
+### 0.10.1 - 2026.01.12
+- apply external dilution factor to concentration above max bin (save data)
+- sort loaded file names alphabetically, i.e. by timestamp (note: this was automatically done on Windows, but on Mac it was possible to load files in wrong order)
+- improved 10 Hz data conversion speed (expand_cpc_data)
+
 ### 0.10.0 - 2025.12.11
 - input for CPC time lag in seconds (1 decimal place, round if 1 Hz data)
 - shift concentration when inverting data (raw data is unshifted)
