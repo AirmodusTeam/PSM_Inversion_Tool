@@ -1,0 +1,120 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/config.py'  # Only trigger when version file changes
+  workflow_dispatch:
+
+jobs:
+  check-version:
+    name: Check if release needed
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      should_build: ${{ steps.check.outputs.should_build }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Need tags for comparison
+
+      - name: Read version from config.py
+        id: version
+        run: |
+          VERSION=$(python3 -c "
+          with open('src/config.py') as f:
+              for line in f:
+                  if 'version_number' in line and '=' in line:
+                      print(line.split('=')[1].strip().strip('\"').strip(\"'\"))
+                      break
+          ")
+          echo "version=$VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Check if tag already exists
+        id: check
+        run: |
+          if git rev-parse "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "Tag v${{ steps.version.outputs.version }} already exists, skipping build"
+            echo "should_build=false" >> $GITHUB_OUTPUT
+          else
+            echo "New version ${{ steps.version.outputs.version }}, will build"
+            echo "should_build=true" >> $GITHUB_OUTPUT
+          fi
+
+  build:
+    name: Build Windows exe
+    needs: check-version
+    if: needs.check-version.outputs.should_build == 'true'
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Conda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          auto-update-conda: true
+          python-version: '3.11'
+          channels: conda-forge
+
+      - name: Install dependencies
+        shell: bash -l {0}
+        run: |
+          conda env create -f environment.yaml || conda env update -f environment.yaml
+          conda activate inversion-env
+
+      - name: Build exe with PyInstaller
+        shell: bash -l {0}
+        env:
+          VERSION: ${{ needs.check-version.outputs.version }}
+        run: |
+          conda activate inversion-env
+          mkdir -p build_staging
+          cp -r src/* build_staging/
+          cp -r res build_staging/res
+          cd build_staging
+          pyinstaller --name "PSM_Inversion_Tool_v${VERSION}" \
+            --onefile --windowed \
+            --add-data="PSM_inv;PSM_inv" \
+            --add-data="res;res" \
+            --add-data="style.css;." \
+            app.py
+
+      - name: Upload exe to server
+        shell: bash -l {0}
+        env:
+          UPLOAD_API_KEY: ${{ secrets.UPLOAD_API_KEY }}
+          VERSION: ${{ needs.check-version.outputs.version }}
+        run: |
+          EXE_PATH="build_staging/dist/PSM_Inversion_Tool_v${VERSION}.exe"
+          echo "Uploading $EXE_PATH"
+          ls -la "$EXE_PATH"
+          curl -f -X POST https://dashboard.airmodus.com/psm-tool/upload \
+            -H "X-Upload-Key: $UPLOAD_API_KEY" \
+            -F "file=@$EXE_PATH" \
+            -F "version=$VERSION" \
+            -F "release_notes=Release v${VERSION}"
+
+      - name: Create git tag
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const version = '${{ needs.check-version.outputs.version }}';
+            await github.rest.git.createRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: `refs/tags/v${version}`,
+              sha: context.sha,
+            });
+            console.log(`Created tag v${version}`);
+
+      - name: Upload exe as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: psm-inversion-tool-exe
+          path: build_staging/dist/*.exe
