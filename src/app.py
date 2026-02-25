@@ -1883,25 +1883,35 @@ class MainWindow(QMainWindow):
             custom_bins = False # set bin_selection to default value
         # clear bin_selection before adding new items
         self.bin_selection.clear()
-        # set largest bin limit according to max_dp from calibration file
-        max_dp = self.max_dp
+
+        # set largest bin limit to 12 if max_dp from calibration file is at least 11
+        if self.max_dp >= 11:
+            max_dp = 12
+        else: # otherwise set largest bin limit to max_dp from calibration file
+            max_dp = self.max_dp
         # convert max_dp to integer if it's a whole number
         if max_dp == int(max_dp):
             max_dp = int(max_dp)
-        # set smallest bin limit according to min_dp from calibration file
-        min_dp = self.min_dp
+
+        # set smallest bin limit to 1.2 if min_dp from calibration file is at most 1.2
+        if self.min_dp <= 1.2:
+            min_dp = 1.2
+        else:
+            min_dp = self.min_dp
         # convert min_dp to integer if it's a whole number
         if min_dp == int(min_dp):
             min_dp = int(min_dp)
+
         # define bin limits
         if self.model == 'PSM2.0':
+            # TODO set min and max to 1.2 and 12 if calibration file allows
             bin_limits = [
-                [min_dp, 1.5, 2.5, 5, max_dp],
-                [min_dp, 1.5, 1.7, 2.5, 5, 8, max_dp],
-                [min_dp, 1.3, 1.5, 1.7, 2.5, 3, 5, 8, max_dp],
-                [min_dp, 1.3, 1.5, 1.7, 2.5, 3, 4, 5, 8, 10, max_dp],
-                [min_dp, 1.3, 1.4, 1.5, 1.7, 2, 2.5, 3, 4, 5, 8, 10, max_dp],
-                [min_dp, 1.3, 1.4, 1.5, 1.7, 2, 2.5, 3, 3.5, 4, 5, 6.5, 8, 10, max_dp]
+                [min_dp, 2, 5, 8, max_dp], # 4 bins
+                [min_dp, 1.5, 2, 3, 5, 8.33, max_dp], # 6 bins
+                [min_dp, 1.4, 1.7, 2, 3, 4, 6, 8.33, max_dp], # 8 bins
+                [min_dp, 1.5, 2, 2.5, 3.1, 4, 5, 6, 7.7, 10, max_dp], # 10 bins
+                [min_dp, 1.4, 1.7, 2, 2.4, 3, 3.6, 4.4, 5.4, 6.6, 8, 10, max_dp], # 12 bins
+                [min_dp, 1.4, 1.7, 2, 2.4, 2.8, 3.3, 3.8, 4.5, 5.3, 6.3, 7.4, 8.7, 10, max_dp] # 14 bins
                 ]
         elif self.model == 'A10':
             bin_limits = [
@@ -1922,9 +1932,12 @@ class MainWindow(QMainWindow):
         for i in self.bin_dict.keys():
             bin_amounts.append(i)
         self.bin_selection.addItems(bin_amounts)
-        # if custom bins are not set by user, set bin_selection value to last item (most bins) by default
+        # if custom bins are not set by user, set bin_selection value to 8 or last item (most bins) by default
         if custom_bins == False:
-            self.bin_selection.setCurrentText(bin_amounts[-1])
+            if "8" in bin_amounts:
+                self.bin_selection.setCurrentText("8")
+            else:
+                self.bin_selection.setCurrentText(bin_amounts[-1])
 
     # show bin limits of selected bin amount in GUI
     def show_bin_limits(self, bin_amount):

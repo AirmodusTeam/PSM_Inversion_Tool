@@ -1,5 +1,11 @@
 # PSM Inversion Tool - Software change log
 
+### 0.10.3 - 2026.02.24
+- new default bin limits (ACTRIS binning)
+- set default bin amount to 8
+- set min Dp to 1.2 if calibration file's lowest Dp <= 1.2
+- set max Dp to 12 if calibration file's highest Dp >= 11
+
 ### 0.10.2 - 2026.01.20
 - 10 Hz files: handle special characters in file path
 
