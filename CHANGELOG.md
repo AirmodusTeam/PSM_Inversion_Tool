@@ -1,5 +1,10 @@
 # PSM Inversion Tool - Software change log
 
+### 0.10.4 - 2026.02.25
+- fix pandas FutureWarnings: replace inplace fillna with direct assignment, use iloc for calibration_df last-row assignment, add observed=False to groupby calls, replace deprecated rolling axis=1 with transposed equivalent
+- fix SettingWithCopyWarning: copy Nbinned slice before assigning columns in step_inversion
+- add pandas=2.3.3 to environment.yaml (temporary exe build fix until pandas 3 scan number bug is fixed)
+
 ### 0.10.3 - 2026.02.24
 - new default bin limits (ACTRIS binning)
 - set default bin amount to 8
