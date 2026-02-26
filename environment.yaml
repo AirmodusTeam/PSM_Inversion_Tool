@@ -3,7 +3,7 @@ channels:
   - conda-forge
 dependencies:
   - numpy
-  - pandas
+  - pandas=2.3.3
   - pyinstaller
   - pyqt
   - pyqtgraph

@@ -1235,7 +1235,7 @@ class MainWindow(QMainWindow):
             if Sn > 1:
                 self.Nbinned_avg = self.Nbinned.iloc[:,0:skip]
                 temp = self.Nbinned.iloc[:,skip:]
-                temp = temp.rolling(Sn, min_periods=1,axis = 1 ).mean()
+                temp = temp.T.rolling(Sn, min_periods=1).mean().T
                 temp['bins'] = self.Nbinned['bins']
                 self.Nbinned_avg = self.Nbinned_avg.merge(temp, how = 'left',on='bins')
                 #self.error_output.append("Averaging over " + str(Sn) + " scans")
@@ -1478,11 +1478,11 @@ class MainWindow(QMainWindow):
     def check_instrument_errors(self, df):
 
         # convert PSM system status hex to row of binary and handle missing values
-        df['PSM_system_status_error'].fillna('0x00000000', inplace=True)
+        df['PSM_system_status_error'] = df['PSM_system_status_error'].fillna('0x00000000')
         df['PSM_system_status_error'] = df['PSM_system_status_error'].apply(lambda x: bin(int(str(x), 16))[2:].zfill(16))
 
         # convert CPC system status hex to row of binary and handle missing values
-        df['CPC_system_status_error'].fillna('0x0000', inplace=True)
+        df['CPC_system_status_error'] = df['CPC_system_status_error'].fillna('0x0000')
         df['CPC_system_status_error'] = df['CPC_system_status_error'].apply(lambda x: bin(int(str(x), 16))[2:].zfill(16))
 
         # PSM bits correspond to errors:
@@ -1575,16 +1575,16 @@ class MainWindow(QMainWindow):
             # limit satflow lower limit to 0.05
             if satflowlimit < 0.05:
                 satflowlimit = 0.05
-            self.calibration_df['cal_satflow'][len(self.calibration_df)-1] = satflowlimit
-            self.calibration_df['cal_diameter'][len(self.calibration_df)-1] = max_dp
+            self.calibration_df.iloc[-1, self.calibration_df.columns.get_loc('cal_satflow')] = satflowlimit
+            self.calibration_df.iloc[-1, self.calibration_df.columns.get_loc('cal_diameter')] = max_dp
         else:
             max_dp = self.max_dp # use max_dp from calibration file
             satflowlimit = (max_dp - cal_fit[1])/cal_fit[0]
             # limit satflow lower limit to 0.1
             if satflowlimit < 0.1:
                 satflowlimit = 0.1
-            self.calibration_df['cal_satflow'][len(self.calibration_df)-1] = satflowlimit
-            self.calibration_df['cal_diameter'][len(self.calibration_df)-1] = max_dp
+            self.calibration_df.iloc[-1, self.calibration_df.columns.get_loc('cal_satflow')] = satflowlimit
+            self.calibration_df.iloc[-1, self.calibration_df.columns.get_loc('cal_diameter')] = max_dp
 
         # sort cal dataframe by cal_satflow in descending order and reindex
         self.calibration_df = self.calibration_df.sort_values(by=['cal_satflow'], ascending=False)
@@ -1647,13 +1647,13 @@ class MainWindow(QMainWindow):
         self.data_df_copy['bins'] = pd.cut(self.data_df_copy['satflow'],bins)
 
         # Calculate bin mean concentration grouped by scans and flow bins
-        self.data_df_copy['bin_mean_c'] = self.data_df_copy.groupby(['bins', 'scan_no'])['concentration'].transform('mean')
+        self.data_df_copy['bin_mean_c'] = self.data_df_copy.groupby(['bins', 'scan_no'], observed=False)['concentration'].transform('mean')
 
         # Add the dilution factor to the dataframe
         dilution_factor = float(self.ext_dilution_fac_input.text())
         self.data_df_copy['bin_mean_c'] = self.data_df_copy['bin_mean_c'] * dilution_factor
 
-        df_binmean = self.data_df_copy[['bins', 'scan_no','bin_mean_c']].groupby(['bins', 'scan_no']).mean()
+        df_binmean = self.data_df_copy[['bins', 'scan_no','bin_mean_c']].groupby(['bins', 'scan_no'], observed=False).mean()
         df_binmean.reset_index(inplace=True)
         self.n_scans = np.unique(df_binmean['scan_no'])
 
@@ -1790,7 +1790,7 @@ class MainWindow(QMainWindow):
     def step_inversion(self):
 
         # create a new dataframe where first column is lower bin edge and second column is upper bin edge
-        self.Ninv = self.Nbinned[['bins','LowerDp','UpperDp','dlogDp','MaxDeteff']]
+        self.Ninv = self.Nbinned[['bins','LowerDp','UpperDp','dlogDp','MaxDeteff']].copy()
 
         self.Ninv['binCenter'] = np.flip(np.append(self.bin_centers,0))
         
@@ -1816,7 +1816,7 @@ class MainWindow(QMainWindow):
         self.Ninv.iloc[:, skip:] = temp
         
         # Repeat the process for the averaged data
-        self.Ninv_avg = self.Nbinned[['bins','LowerDp','UpperDp','dlogDp','MaxDeteff']]
+        self.Ninv_avg = self.Nbinned[['bins','LowerDp','UpperDp','dlogDp','MaxDeteff']].copy()
         self.Ninv_avg['binCenter'] = np.flip(np.append(self.bin_centers,0))
         for i in range(len(self.n_scans)):
             # add columns to dataframe Ninv with avg concentration values
