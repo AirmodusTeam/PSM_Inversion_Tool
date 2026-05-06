@@ -1479,11 +1479,15 @@ class MainWindow(QMainWindow):
 
         # convert PSM system status hex to row of binary and handle missing values
         df['PSM_system_status_error'] = df['PSM_system_status_error'].fillna('0x00000000')
-        df['PSM_system_status_error'] = df['PSM_system_status_error'].apply(lambda x: bin(int(str(x), 16))[2:].zfill(16))
+        unique_psm_hex = df['PSM_system_status_error'].unique()
+        psm_hex_to_bin = {h: bin(int(str(h), 16))[2:].zfill(16) for h in unique_psm_hex}
+        df['PSM_system_status_error'] = df['PSM_system_status_error'].map(psm_hex_to_bin)
 
         # convert CPC system status hex to row of binary and handle missing values
         df['CPC_system_status_error'] = df['CPC_system_status_error'].fillna('0x0000')
-        df['CPC_system_status_error'] = df['CPC_system_status_error'].apply(lambda x: bin(int(str(x), 16))[2:].zfill(16))
+        unique_cpc_hex = df['CPC_system_status_error'].unique()
+        cpc_hex_to_bin = {h: bin(int(str(h), 16))[2:].zfill(16) for h in unique_cpc_hex}
+        df['CPC_system_status_error'] = df['CPC_system_status_error'].map(cpc_hex_to_bin)
 
         # PSM bits correspond to errors:
         # 0 CODES_STATUS_GROWTH_TUBE_TEMP
@@ -1676,33 +1680,10 @@ class MainWindow(QMainWindow):
 
         self.Dplot = np.flip(fixed_bin_limits)
 
-        
-        for i in range(len(self.n_scans)):
-            # add columns to dataframe Nbinned with avg concentration values
-            temp = df_binmean[['bins','bin_mean_c']].where(df_binmean['scan_no'] == i).dropna()
-            
-            #TODO: fix and uncomment
-            # if data filtering is checked, filter out the data with concentration below 1e-6
-            # try:
-            #     if self.data_filtering_btn.isChecked():
-            #         print(i)
-            #         x = self.Ninv['upper']
-            #         y = np.array(temp['bin_mean_c'])
-            #         x = x[~np.isnan(y)]
-            #         y = y[~np.isnan(y)]
-            #         y = y[~np.isnan(x)]
-            #         x = x[~np.isnan(x)]
-            #         slope, intercept, r_value, p_value, std_err = stats.linregress(x,np.abs(y))
-            #         # if slope is negative replace temp['bin_mean_c'] with nan
-            #         if slope < 0:
-            #             temp['bin_mean_c'] = np.nan
-            # except:
-            #     continue
-            
-            temp = temp.rename(columns={"bins": "bins", "bin_mean_c": 'scanN'+str(i)})
-   
-            # merge temp to Nbinned
-            self.Nbinned = self.Nbinned.merge(temp, how = 'left',on='bins')
+        # pivot from long to wide format in a single operation, then merge once
+        pivot_df = df_binmean.pivot(index='bins', columns='scan_no', values='bin_mean_c')
+        pivot_df.columns = [f'scanN{i}' for i in range(len(pivot_df.columns))]
+        self.Nbinned = self.Nbinned.merge(pivot_df, left_on='bins', right_index=True, how='left')
 
         # set negative values in Nbinned to nan
         skip = 7 # skip 7 metadata columns: lower, upper, bins, UpperDp, LowerDp, dlogDp, MaxDeteff
@@ -1794,15 +1775,13 @@ class MainWindow(QMainWindow):
 
         self.Ninv['binCenter'] = np.flip(np.append(self.bin_centers,0))
         
-        # Skip the metadata columns, and loop through the scans to calculate the inversion
-        for i in range(len(self.n_scans)):
-            # add columns to dataframe Ninv with avg concentration values
-            temp = self.Nbinned[['bins','scanN'+str(i)]]
-            temp = temp.rename(columns={"bins": "bins", "scanN"+str(i): 'dN'+str(i)})
-            # calculate the difference between the upper and lower bin edges
-            temp['dN'+str(i)] = temp['dN'+str(i)].diff()/ self.Ninv['dlogDp']/self.Ninv['MaxDeteff']
-            # merge temp to Ninv
-            self.Ninv = self.Ninv.merge(temp, how = 'left',on='bins')
+        scan_cols = [f'scanN{i}' for i in range(len(self.n_scans))]
+        divisor = self.Ninv['dlogDp'] * self.Ninv['MaxDeteff']
+
+        # vectorized diff and division across all scan columns at once
+        dn_df = self.Nbinned[scan_cols].diff().div(divisor, axis=0)
+        dn_df.columns = [f'dN{i}' for i in range(len(self.n_scans))]
+        self.Ninv = pd.concat([self.Ninv, dn_df], axis=1)
 
         # Drop the first row of the dataframe Ninv (as this is only the first bin edge)
         self.Ninv = self.Ninv.drop(self.Ninv.index[0])
@@ -1812,20 +1791,17 @@ class MainWindow(QMainWindow):
         # set all negative values to nan
         skip = 6 # skip 6 metadata columns: bins, LowerDp, UpperDp, dlogDp, MaxDeteff, binCenter
         temp = self.Ninv.iloc[:, skip:]
-        temp[temp < 0] = np.nan
-        self.Ninv.iloc[:, skip:] = temp
-        
+        self.Ninv.iloc[:, skip:] = temp.mask(temp < 0)
+
         # Repeat the process for the averaged data
         self.Ninv_avg = self.Nbinned[['bins','LowerDp','UpperDp','dlogDp','MaxDeteff']].copy()
         self.Ninv_avg['binCenter'] = np.flip(np.append(self.bin_centers,0))
-        for i in range(len(self.n_scans)):
-            # add columns to dataframe Ninv with avg concentration values
-            temp = self.Nbinned_avg[['bins','scanN'+str(i)]]
-            temp = temp.rename(columns={"bins": "bins", "scanN"+str(i): 'dN'+str(i)})
-            # calculate the difference between the upper and lower bin edges
-            temp['dN'+str(i)] = temp['dN'+str(i)].diff()/ self.Ninv_avg['dlogDp']/self.Ninv_avg['MaxDeteff']
-            # merge temp to Ninv
-            self.Ninv_avg = self.Ninv_avg.merge(temp, how = 'left',on='bins')
+        divisor_avg = self.Ninv_avg['dlogDp'] * self.Ninv_avg['MaxDeteff']
+
+        # vectorized diff and division across all scan columns at once
+        dn_avg_df = self.Nbinned_avg[scan_cols].diff().div(divisor_avg, axis=0)
+        dn_avg_df.columns = [f'dN{i}' for i in range(len(self.n_scans))]
+        self.Ninv_avg = pd.concat([self.Ninv_avg, dn_avg_df], axis=1)
 
         # Drop the first row of the dataframe Ninv (as this is only the first bin edge)
         self.Ninv_avg = self.Ninv_avg.drop(self.Ninv_avg.index[0])
@@ -1835,8 +1811,7 @@ class MainWindow(QMainWindow):
         # set all negative values to nan
         skip = 6 # skip 6 metadata columns: bins, LowerDp, UpperDp, dlogDp, MaxDeteff, binCenter
         temp = self.Ninv_avg.iloc[:, skip:]
-        temp[temp < 0] = np.nan
-        self.Ninv_avg.iloc[:, skip:] = temp
+        self.Ninv_avg.iloc[:, skip:] = temp.mask(temp < 0)
 
     # show / hide middle plot day markers based on user setting
     def toggle_day_markers(self):
